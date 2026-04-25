@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>烟台文化旅游职业学院 - 学生信息管理系统</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <section id="loginScreen" class="login-screen">
+    <div class="login-hero">
+      <div class="login-brand">
+        <div class="school-logo login-logo" aria-label="烟台文化旅游职业学院校徽">
+          <img src="assets/school-logo.jpg" alt="烟台文化旅游职业学院校徽" onerror="this.classList.add('hidden');this.nextElementSibling.classList.remove('hidden');">
+          <span class="logo-fallback hidden">烟文旅</span>
+        </div>
+        <div>
+          <p class="school-en">YANTAI VOCATIONAL COLLEGE OF CULTURE AND TOURISM</p>
+          <h1>烟台文化旅游职业学院</h1>
+          <p class="login-subtitle">校园学生基础信息数字化核验平台</p>
+        </div>
+      </div>
+      <div class="login-panel">
+        <p class="section-kicker">Unified Identity Authentication</p>
+        <h2>学生信息管理系统登录</h2>
+        <p class="login-tip">请使用系统管理员账号进入后台。</p>
+        <form id="loginForm" class="login-form" autocomplete="off">
+          <label>
+            <span>账号</span>
+            <input id="loginUsername" name="username" placeholder="请输入账号">
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="loginPassword" name="password" type="password" placeholder="请输入密码">
+          </label>
+          <p id="loginError" class="login-error hidden">账号或密码错误，请重新输入。</p>
+          <button class="btn btn-primary wide" type="submit">登录后台</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell hidden">
+  <header class="app-header">
+    <div class="brand-block">
+      <div class="school-logo" aria-label="烟台文化旅游职业学院校徽">
+        <img src="assets/school-logo.jpg" alt="烟台文化旅游职业学院校徽" onerror="this.classList.add('hidden');this.nextElementSibling.classList.remove('hidden');">
+        <span class="logo-fallback hidden">烟文旅</span>
+      </div>
+      <div class="brand-copy">
+        <p class="school-en">YANTAI VOCATIONAL COLLEGE OF CULTURE AND TOURISM</p>
+        <h1>烟台文化旅游职业学院</h1>
+        <div class="system-title">
+          <strong>学生信息管理系统</strong>
+          <span>校园学生基础信息数字化核验平台</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <label class="btn btn-ghost file-btn" title="导入标准学生信息数据库">
+        <span aria-hidden="true">⇧</span>导入学生库
+        <input id="standardImportFile" type="file" accept=".xlsx,.xls">
+      </label>
+      <label class="btn btn-ghost file-btn" title="导入需要核验的学生信息表">
+        <span aria-hidden="true">⇧</span>导入待核对表
+        <input id="checkImportFile" type="file" accept=".xlsx,.xls">
+      </label>
+      <button id="compareBtn" class="btn btn-primary header-btn" type="button">开始比对</button>
+      <button id="exportResultBtn" class="btn btn-ghost" type="button">导出结果</button>
+      <button id="resetBtn" class="btn btn-danger-soft" type="button">重置数据</button>
+      <button id="logoutBtn" class="btn btn-ghost" type="button">退出登录</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stats-panel" aria-label="核验统计">
+      <article class="stat">
+        <span class="stat-icon" aria-hidden="true">人</span>
+        <div>
+          <span class="stat-label">学生总数</span>
+          <strong id="totalCount">0</strong>
+          <small>标准库登记学生</small>
+        </div>
+      </article>
+      <article class="stat">
+        <span class="stat-icon" aria-hidden="true">✓</span>
+        <div>
+          <span class="stat-label">核对通过</span>
+          <strong id="passCount">0</strong>
+          <small>信息一致记录</small>
+        </div>
+      </article>
+      <article class="stat">
+        <span class="stat-icon" aria-hidden="true">!</span>
+        <div>
+          <span class="stat-label">异常数据</span>
+          <strong id="issueCount">0</strong>
+          <small>待处理核验异常</small>
+        </div>
+      </article>
+      <article class="stat">
+        <span class="stat-icon" aria-hidden="true">复</span>
+        <div>
+          <span class="stat-label">重复学号</span>
+          <strong id="duplicateCount">0</strong>
+          <small>标准库或待核对表重复</small>
+        </div>
+      </article>
+    </section>
+
+    <section class="workspace">
+      <form id="studentForm" class="student-form panel" autocomplete="off" novalidate>
+        <input id="studentId" type="hidden">
+        <div class="form-title">
+          <div>
+            <p class="section-kicker">Student Registration</p>
+            <h2 id="formTitle">学生信息登记</h2>
+            <p id="editingNotice" class="editing-notice hidden"></p>
+          </div>
+          <button id="cancelEditBtn" class="btn btn-text hidden" type="button">取消编辑</button>
+        </div>
+
+        <label>
+          <span>姓名 <em>*</em></span>
+          <input id="name" name="name" maxlength="20" placeholder="请输入学生姓名">
+          <small class="field-error" data-error-for="name"></small>
+        </label>
+        <label>
+          <span>学号 <em>*</em></span>
+          <input id="studentNo" name="studentNo" maxlength="24" placeholder="请输入唯一学号">
+          <small class="field-error" data-error-for="studentNo"></small>
+        </label>
+        <label>
+          <span>性别 <em>*</em></span>
+          <select id="gender" name="gender">
+            <option value="">请选择性别</option>
+            <option>男</option>
+            <option>女</option>
+          </select>
+          <small class="field-error" data-error-for="gender"></small>
+        </label>
+        <label>
+          <span>年龄</span>
+          <input id="age" name="age" type="number" min="6" max="80" placeholder="可选，例：18">
+          <small class="field-error" data-error-for="age"></small>
+        </label>
+        <label>
+          <span>班级 <em>*</em></span>
+          <input id="className" name="className" maxlength="30" placeholder="例如：旅游管理一班">
+          <small class="field-error" data-error-for="className"></small>
+        </label>
+        <label>
+          <span>联系方式 <em>*</em></span>
+          <input id="phone" name="phone" maxlength="20" placeholder="请输入 11 位手机号">
+          <small class="field-error" data-error-for="phone"></small>
+        </label>
+        <label class="wide">
+          <span>家庭住址</span>
+          <input id="address" name="address" maxlength="80" placeholder="请输入家庭住址，可选">
+        </label>
+        <label class="wide">
+          <span>备注</span>
+          <input id="remark" name="remark" maxlength="100" placeholder="可填写核验说明或其他备注">
+        </label>
+        <button id="submitBtn" class="btn btn-primary wide" type="submit">添加到学生库</button>
+      </form>
+
+      <section class="list-panel panel">
+        <div class="list-head">
+          <div>
+            <p class="section-kicker">Verification Records</p>
+            <h2>学生信息核验结果</h2>
+            <p class="list-desc">支持导入标准学生库与待核对表，并按学号自动比对关键字段。</p>
+          </div>
+        </div>
+
+        <div class="view-tabs" role="tablist" aria-label="数据视图">
+          <button class="tab-btn active" type="button" data-view="standard">标准学生库</button>
+          <button class="tab-btn" type="button" data-view="check">待核对表</button>
+          <button class="tab-btn" type="button" data-view="result">核对结果</button>
+        </div>
+
+        <div class="toolbar">
+          <div class="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input id="searchInput" type="search" placeholder="搜索姓名、学号、班级或联系方式">
+            <button id="clearSearchBtn" class="clear-search hidden" type="button" aria-label="清空搜索">×</button>
+          </div>
+          <select id="classFilter" aria-label="按班级筛选">
+            <option value="">全部班级</option>
+          </select>
+          <select id="sortSelect" aria-label="排序">
+            <option value="createdAt-desc">最新导入</option>
+            <option value="name-asc">姓名 A-Z</option>
+            <option value="studentNo-asc">学号升序</option>
+            <option value="className-asc">班级升序</option>
+            <option value="status-asc">状态排序</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table id="dataTable">
+            <thead id="tableHead"></thead>
+            <tbody id="studentTable"></tbody>
+          </table>
+        </div>
+        <div id="studentCards" class="student-cards"></div>
+        <div id="emptyState" class="empty-state hidden">
+          <strong id="emptyTitle">暂无学生信息，请先添加学生</strong>
+          <span id="emptyText">完成学生信息登记或导入 Excel 后，数据会自动保存到本地浏览器。</span>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <strong>烟台文化旅游职业学院 · 学生信息管理系统</strong>
+    <span>仅用于校内教学、演示与学生信息核验管理实践</span>
+    <span>版本号：V1.0</span>
+  </footer>
+  </div>
+
+  <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-card">
+      <h3 id="confirmTitle">确认删除</h3>
+      <p id="confirmMessage">确定删除这条学生信息吗？</p>
+      <div class="modal-actions">
+        <button id="cancelDeleteBtn" class="btn btn-ghost" type="button">取消</button>
+        <button id="confirmDeleteBtn" class="btn btn-danger" type="button">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
