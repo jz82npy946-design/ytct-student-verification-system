@@ -3,7 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>烟台文化旅游职业学院 - 学生信息管理系统</title>
+  <title>烟台文化旅游职业学院 - 学生信息核验管理系统</title>
+  <meta name="description" content="用于烟台文化旅游职业学院学生基础信息导入、核验、比对和结果导出的校园信息化工具。">
+  <meta name="theme-color" content="#0f5f5c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="学生核验系统">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
@@ -23,8 +31,8 @@
       </div>
       <div class="login-panel">
         <p class="section-kicker">Unified Identity Authentication</p>
-        <h2>学生信息管理系统登录</h2>
-        <p class="login-tip">请使用系统管理员账号进入后台。</p>
+        <h2>学生信息核验管理系统登录</h2>
+        <p class="login-tip">请输入系统管理员账号，进入学生信息核验后台。</p>
         <form id="loginForm" class="login-form" autocomplete="off">
           <label>
             <span>账号</span>
@@ -52,7 +60,7 @@
         <p class="school-en">YANTAI VOCATIONAL COLLEGE OF CULTURE AND TOURISM</p>
         <h1>烟台文化旅游职业学院</h1>
         <div class="system-title">
-          <strong>学生信息管理系统</strong>
+          <strong>学生信息核验管理系统</strong>
           <span>校园学生基础信息数字化核验平台</span>
         </div>
       </div>
@@ -72,6 +80,15 @@
       <button id="logoutBtn" class="btn btn-ghost" type="button">退出登录</button>
     </div>
   </header>
+
+  <div id="installPrompt" class="install-prompt hidden">
+    <div>
+      <strong>可安装为桌面应用</strong>
+      <span>安装后可从桌面快速打开学生核验系统。</span>
+    </div>
+    <button id="installBtn" class="btn btn-primary" type="button">安装</button>
+    <button id="dismissInstallBtn" class="clear-search" type="button" aria-label="关闭安装提示">×</button>
+  </div>
 
   <main class="layout">
     <section class="stats-panel" aria-label="核验统计">
@@ -215,7 +232,7 @@
   </main>
 
   <footer class="app-footer">
-    <strong>烟台文化旅游职业学院 · 学生信息管理系统</strong>
+    <strong>烟台文化旅游职业学院 · 学生信息核验管理系统</strong>
     <span>仅用于校内教学、演示与学生信息核验管理实践</span>
     <span>版本号：V1.0</span>
   </footer>
@@ -235,5 +252,14 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("service-worker.js").catch((error) => {
+          console.warn("Service worker registration failed:", error);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

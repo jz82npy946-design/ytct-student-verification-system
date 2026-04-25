@@ -67,6 +67,7 @@ let verificationResults = loadResults();
 let activeView = "standard";
 let editingDataset = "standard";
 let pendingDelete = null;
+let deferredInstallPrompt = null;
 
 const elements = {
   loginScreen: document.querySelector("#loginScreen"),
@@ -75,6 +76,9 @@ const elements = {
   loginUsername: document.querySelector("#loginUsername"),
   loginPassword: document.querySelector("#loginPassword"),
   loginError: document.querySelector("#loginError"),
+  installPrompt: document.querySelector("#installPrompt"),
+  installBtn: document.querySelector("#installBtn"),
+  dismissInstallBtn: document.querySelector("#dismissInstallBtn"),
   form: document.querySelector("#studentForm"),
   studentId: document.querySelector("#studentId"),
   formTitle: document.querySelector("#formTitle"),
@@ -111,6 +115,8 @@ const elements = {
 
 elements.loginForm.addEventListener("submit", handleLogin);
 elements.logoutBtn.addEventListener("click", logout);
+elements.installBtn.addEventListener("click", installPwa);
+elements.dismissInstallBtn.addEventListener("click", dismissInstallPrompt);
 elements.form.addEventListener("submit", handleSubmit);
 elements.form.addEventListener("input", clearFieldError);
 elements.form.addEventListener("change", clearFieldError);
@@ -135,9 +141,31 @@ elements.confirmModal.addEventListener("click", (event) => {
 document.querySelectorAll(".tab-btn").forEach((button) => {
   button.addEventListener("click", () => switchView(button.dataset.view));
 });
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  elements.installPrompt.classList.remove("hidden");
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  elements.installPrompt.classList.add("hidden");
+  showToast("应用已安装到桌面");
+});
 
 initAuth();
 render();
+
+async function installPwa() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  elements.installPrompt.classList.add("hidden");
+}
+
+function dismissInstallPrompt() {
+  elements.installPrompt.classList.add("hidden");
+}
 
 function initAuth() {
   const authed = sessionStorage.getItem(AUTH_KEY) === "true";

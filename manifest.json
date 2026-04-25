@@ -1,0 +1,24 @@
+{
+  "name": "烟台文化旅游职业学院学生信息核验管理系统",
+  "short_name": "学生核验系统",
+  "description": "用于烟台文化旅游职业学院学生基础信息导入、核验、比对和结果导出的校园信息化工具。",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5faf8",
+  "theme_color": "#0f5f5c",
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
