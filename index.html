@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>烟台文化旅游职业学院 - 学生信息核验管理系统</title>
-  <meta name="description" content="用于烟台文化旅游职业学院学生基础信息导入、核验、比对和结果导出的校园信息化工具。">
+  <meta name="description" content="用于烟台文化旅游职业学院学生基础信息和资助信息导入、核验、比对和结果导出的校园信息化工具。">
   <meta name="theme-color" content="#0f5f5c">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -26,7 +26,7 @@
         <div>
           <p class="school-en">YANTAI VOCATIONAL COLLEGE OF CULTURE AND TOURISM</p>
           <h1>烟台文化旅游职业学院</h1>
-          <p class="login-subtitle">校园学生基础信息数字化核验平台</p>
+          <p class="login-subtitle">校园学生基础与资助信息数字化核验平台</p>
         </div>
       </div>
       <div class="login-panel">
@@ -61,7 +61,7 @@
         <h1>烟台文化旅游职业学院</h1>
         <div class="system-title">
           <strong>学生信息核验管理系统</strong>
-          <span>校园学生基础信息数字化核验平台</span>
+          <span>校园学生基础与资助信息数字化核验平台</span>
         </div>
       </div>
     </div>
@@ -172,6 +172,29 @@
           <input id="phone" name="phone" maxlength="20" placeholder="请输入 11 位手机号">
           <small class="field-error" data-error-for="phone"></small>
         </label>
+        <label>
+          <span>身份证号 <em>*</em></span>
+          <input id="idCard" name="idCard" maxlength="18" placeholder="请输入 18 位身份证号">
+          <small class="field-error" data-error-for="idCard"></small>
+        </label>
+        <label>
+          <span>银行卡号 <em>*</em></span>
+          <input id="bankCard" name="bankCard" maxlength="30" placeholder="请输入学生资助银行卡号">
+          <small class="field-error" data-error-for="bankCard"></small>
+        </label>
+        <label>
+          <span>开户银行</span>
+          <input id="bankName" name="bankName" maxlength="40" placeholder="例如：中国工商银行烟台分行">
+        </label>
+        <label>
+          <span>资助项目</span>
+          <input id="aidProject" name="aidProject" maxlength="40" placeholder="例如：国家助学金">
+        </label>
+        <label>
+          <span>资助金额</span>
+          <input id="aidAmount" name="aidAmount" type="number" min="0" step="0.01" placeholder="例如：3300">
+          <small class="field-error" data-error-for="aidAmount"></small>
+        </label>
         <label class="wide">
           <span>家庭住址</span>
           <input id="address" name="address" maxlength="80" placeholder="请输入家庭住址，可选">
@@ -188,7 +211,7 @@
           <div>
             <p class="section-kicker">Verification Records</p>
             <h2>学生信息核验结果</h2>
-            <p class="list-desc">支持导入标准学生库与待核对表，并按学号自动比对关键字段。</p>
+            <p class="list-desc">支持导入标准学生库与待核对表，并按学号自动比对基础信息、身份证号、银行卡号与资助字段。</p>
           </div>
         </div>
 
@@ -201,7 +224,7 @@
         <div class="toolbar">
           <div class="search-box">
             <span aria-hidden="true">⌕</span>
-            <input id="searchInput" type="search" placeholder="搜索姓名、学号、班级或联系方式">
+            <input id="searchInput" type="search" placeholder="搜索姓名、学号、班级、身份证号、银行卡号或资助项目">
             <button id="clearSearchBtn" class="clear-search hidden" type="button" aria-label="清空搜索">×</button>
           </div>
           <select id="classFilter" aria-label="按班级筛选">
@@ -233,7 +256,7 @@
 
   <footer class="app-footer">
     <strong>烟台文化旅游职业学院 · 学生信息核验管理系统</strong>
-    <span>仅用于校内教学、演示与学生信息核验管理实践</span>
+    <span>仅用于校内教学、演示与学生基础及资助信息核验管理实践</span>
     <span>版本号：V1.0</span>
   </footer>
   </div>

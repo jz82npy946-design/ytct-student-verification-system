@@ -11,14 +11,20 @@ const LOGIN_ACCOUNT = {
 };
 
 const PHONE_PATTERN = /^1[3-9]\d{9}$/;
-const REQUIRED_HEADERS = ["姓名", "学号", "性别", "班级", "联系方式"];
-const OPTIONAL_HEADERS = ["年龄", "家庭住址", "备注"];
+const BANK_CARD_PATTERN = /^\d{12,30}$/;
+const REQUIRED_HEADERS = ["姓名", "学号", "性别", "班级", "联系方式", "身份证号", "银行卡号"];
+const OPTIONAL_HEADERS = ["年龄", "家庭住址", "开户银行", "资助项目", "资助金额", "备注"];
 const CORE_FIELDS = [
   ["name", "姓名"],
   ["gender", "性别"],
   ["age", "年龄"],
   ["className", "班级"],
   ["phone", "联系方式"],
+  ["idCard", "身份证号"],
+  ["bankCard", "银行卡号"],
+  ["bankName", "开户银行"],
+  ["aidProject", "资助项目"],
+  ["aidAmount", "资助金额"],
   ["address", "家庭住址"]
 ];
 
@@ -31,6 +37,11 @@ const sampleStandardStudents = [
     age: "18",
     className: "旅游管理一班",
     phone: "13800000001",
+    idCard: "370602200801010010",
+    bankCard: "6222020200010000001",
+    bankName: "中国工商银行烟台分行",
+    aidProject: "国家助学金",
+    aidAmount: "3300",
     address: "山东省烟台市莱山区",
     remark: "",
     createdAt: Date.now() - 300000
@@ -43,6 +54,11 @@ const sampleStandardStudents = [
     age: "19",
     className: "酒店管理一班",
     phone: "13800000002",
+    idCard: "370602200702020029",
+    bankCard: "6228480200010000002",
+    bankName: "中国农业银行烟台分行",
+    aidProject: "学院困难补助",
+    aidAmount: "1200",
     address: "山东省烟台市芝罘区",
     remark: "",
     createdAt: Date.now() - 200000
@@ -55,6 +71,11 @@ const sampleStandardStudents = [
     age: "18",
     className: "文化创意二班",
     phone: "13800000003",
+    idCard: "370602200803030031",
+    bankCard: "6217000200010000003",
+    bankName: "中国建设银行烟台分行",
+    aidProject: "国家助学金",
+    aidAmount: "3300",
     address: "山东省烟台市福山区",
     remark: "",
     createdAt: Date.now() - 100000
@@ -272,6 +293,11 @@ function getFormStudent() {
     age: formData.get("age"),
     className: formData.get("className"),
     phone: formData.get("phone"),
+    idCard: formData.get("idCard"),
+    bankCard: formData.get("bankCard"),
+    bankName: formData.get("bankName"),
+    aidProject: formData.get("aidProject"),
+    aidAmount: formData.get("aidAmount"),
     address: formData.get("address"),
     remark: formData.get("remark"),
     createdAt: currentId
@@ -302,6 +328,19 @@ function validateStudent(student, list, currentId = "") {
   }
   if (student.age && !isValidAge(student.age)) {
     errors.age = "年龄必须是合理数字";
+  }
+  if (!student.idCard) {
+    errors.idCard = "请输入身份证号";
+  } else if (!isValidIdCard(student.idCard)) {
+    errors.idCard = "身份证号格式不正确";
+  }
+  if (!student.bankCard) {
+    errors.bankCard = "请输入银行卡号";
+  } else if (!BANK_CARD_PATTERN.test(student.bankCard)) {
+    errors.bankCard = "银行卡号需为 12-30 位数字";
+  }
+  if (student.aidAmount && !isValidAmount(student.aidAmount)) {
+    errors.aidAmount = "资助金额必须是非负数字";
   }
 
   const duplicate = list.some((item) => item.studentNo === student.studentNo && item.id !== currentId);
@@ -445,7 +484,7 @@ function filterImportableStudents(imported) {
 }
 
 function hasImportFormatIssue(student) {
-  if (!student.name || !student.studentNo || !student.gender || !student.className || !student.phone) {
+  if (!student.name || !student.studentNo || !student.gender || !student.className || !student.phone || !student.idCard || !student.bankCard) {
     return true;
   }
   if (!["男", "女"].includes(student.gender)) {
@@ -454,7 +493,16 @@ function hasImportFormatIssue(student) {
   if (student.age && !isValidAge(student.age)) {
     return true;
   }
-  return !PHONE_PATTERN.test(student.phone);
+  if (!PHONE_PATTERN.test(student.phone)) {
+    return true;
+  }
+  if (!isValidIdCard(student.idCard)) {
+    return true;
+  }
+  if (!BANK_CARD_PATTERN.test(student.bankCard)) {
+    return true;
+  }
+  return Boolean(student.aidAmount && !isValidAmount(student.aidAmount));
 }
 
 function parseExcelRows(rows) {
@@ -483,6 +531,11 @@ function parseExcelRows(rows) {
         age: normalizedRow["年龄"],
         className: normalizedRow["班级"],
         phone: normalizedRow["联系方式"],
+        idCard: normalizedRow["身份证号"],
+        bankCard: normalizedRow["银行卡号"],
+        bankName: normalizedRow["开户银行"],
+        aidProject: normalizedRow["资助项目"],
+        aidAmount: normalizedRow["资助金额"],
         address: normalizedRow["家庭住址"],
         remark: normalizedRow["备注"],
         createdAt: Date.now()
@@ -558,7 +611,7 @@ function buildVerificationResults() {
     const standard = standardMap.get(student.studentNo);
     const diffs = CORE_FIELDS
       .filter(([field]) => clean(standard[field]) !== clean(student[field]))
-      .map(([field, label]) => `${label}不一致：标准库为 ${displayValue(standard[field])}，待核对表为 ${displayValue(student[field])}`);
+      .map(([field, label]) => `${label}不一致：标准库为 ${displayFieldValue(field, standard[field])}，待核对表为 ${displayFieldValue(field, student[field])}`);
 
     if (diffs.length > 0) {
       results.push(makeResult(base, "信息不一致", getDiffFieldLabels(diffs), diffs.join("；")));
@@ -588,11 +641,37 @@ function buildVerificationResults() {
 
 function getFormatErrors(student) {
   const errors = [];
+  if (!student.name) {
+    errors.push({ field: "姓名", message: "姓名为空" });
+  }
   if (student.gender && !["男", "女"].includes(student.gender)) {
     errors.push({ field: "性别", message: `性别格式异常：${student.gender}` });
+  } else if (!student.gender) {
+    errors.push({ field: "性别", message: "性别为空" });
   }
   if (student.age && !isValidAge(student.age)) {
     errors.push({ field: "年龄", message: `年龄格式异常：${student.age}` });
+  }
+  if (!student.className) {
+    errors.push({ field: "班级", message: "班级为空" });
+  }
+  if (!student.phone) {
+    errors.push({ field: "联系方式", message: "联系方式为空" });
+  } else if (!PHONE_PATTERN.test(student.phone)) {
+    errors.push({ field: "联系方式", message: `联系方式格式异常：${student.phone}` });
+  }
+  if (!student.idCard) {
+    errors.push({ field: "身份证号", message: "身份证号为空" });
+  } else if (!isValidIdCard(student.idCard)) {
+    errors.push({ field: "身份证号", message: `身份证号格式异常：${student.idCard}` });
+  }
+  if (!student.bankCard) {
+    errors.push({ field: "银行卡号", message: "银行卡号为空" });
+  } else if (!BANK_CARD_PATTERN.test(student.bankCard)) {
+    errors.push({ field: "银行卡号", message: "银行卡号需为 12-30 位数字" });
+  }
+  if (student.aidAmount && !isValidAmount(student.aidAmount)) {
+    errors.push({ field: "资助金额", message: `资助金额格式异常：${student.aidAmount}` });
   }
   return errors;
 }
@@ -606,7 +685,12 @@ function resultBase(student) {
     studentNo: student?.studentNo || "",
     name: student?.name || "",
     className: student?.className || "",
-    phone: student?.phone || ""
+    phone: student?.phone || "",
+    idCard: student?.idCard || "",
+    bankCard: student?.bankCard || "",
+    bankName: student?.bankName || "",
+    aidProject: student?.aidProject || "",
+    aidAmount: student?.aidAmount || ""
   };
 }
 
@@ -659,6 +743,11 @@ function getVisibleRows() {
         row.studentNo,
         row.className,
         row.phone,
+        row.idCard,
+        row.bankCard,
+        row.bankName,
+        row.aidProject,
+        row.aidAmount,
         row.status,
         row.fields,
         row.detail
@@ -691,7 +780,9 @@ function renderTable(rows) {
         <th>学号</th>
         <th>姓名</th>
         <th>班级</th>
-        <th>联系方式</th>
+        <th>身份证号</th>
+        <th>银行卡号</th>
+        <th>资助金额</th>
         <th>核对状态</th>
         <th>异常字段</th>
         <th>详情</th>
@@ -707,6 +798,11 @@ function renderTable(rows) {
         <th>性别</th>
         <th>年龄</th>
         <th>班级</th>
+        <th>身份证号</th>
+        <th>银行卡号</th>
+        <th>开户银行</th>
+        <th>资助项目</th>
+        <th>资助金额</th>
         <th>联系方式</th>
         <th>家庭住址</th>
         <th>备注</th>
@@ -726,6 +822,11 @@ function renderStudentRow(student) {
       <td>${escapeHtml(student.gender)}</td>
       <td>${escapeHtml(student.age || "未填")}</td>
       <td>${escapeHtml(student.className)}</td>
+      <td title="${escapeHtml(student.idCard)}">${escapeHtml(maskIdCard(student.idCard) || "未填写")}</td>
+      <td title="${escapeHtml(student.bankCard)}">${escapeHtml(maskBankCard(student.bankCard) || "未填写")}</td>
+      <td>${escapeHtml(student.bankName || "未填写")}</td>
+      <td>${escapeHtml(student.aidProject || "未填写")}</td>
+      <td>${escapeHtml(formatAmount(student.aidAmount) || "未填写")}</td>
       <td>${escapeHtml(student.phone)}</td>
       <td>${escapeHtml(student.address || "未填写")}</td>
       <td>${escapeHtml(student.remark || "无")}</td>
@@ -740,7 +841,9 @@ function renderResultRow(result) {
       <td>${escapeHtml(result.studentNo || "未填写")}</td>
       <td>${escapeHtml(result.name || "未填写")}</td>
       <td>${escapeHtml(result.className || "未填写")}</td>
-      <td>${escapeHtml(result.phone || "未填写")}</td>
+      <td title="${escapeHtml(result.idCard)}">${escapeHtml(maskIdCard(result.idCard) || "未填写")}</td>
+      <td title="${escapeHtml(result.bankCard)}">${escapeHtml(maskBankCard(result.bankCard) || "未填写")}</td>
+      <td>${escapeHtml(formatAmount(result.aidAmount) || "未填写")}</td>
       <td><span class="status-pill ${statusClass(result.status)}">${escapeHtml(result.status)}</span></td>
       <td>${escapeHtml(result.fields || "-")}</td>
       <td title="${escapeHtml(result.detail)}">${escapeHtml(result.detail)}</td>
@@ -762,6 +865,9 @@ function renderCards(rows) {
         </div>
         <div class="card-grid">
           <span>联系方式<strong>${escapeHtml(result.phone || "未填写")}</strong></span>
+          <span>身份证号<strong>${escapeHtml(maskIdCard(result.idCard) || "未填写")}</strong></span>
+          <span>银行卡号<strong>${escapeHtml(maskBankCard(result.bankCard) || "未填写")}</strong></span>
+          <span>资助金额<strong>${escapeHtml(formatAmount(result.aidAmount) || "未填写")}</strong></span>
           <span>异常字段<strong>${escapeHtml(result.fields || "-")}</strong></span>
           <span class="wide-card">详情<strong>${escapeHtml(result.detail)}</strong></span>
         </div>
@@ -781,6 +887,11 @@ function renderCards(rows) {
       <div class="card-grid">
         <span>性别<strong>${escapeHtml(student.gender)}</strong></span>
         <span>年龄<strong>${escapeHtml(student.age || "未填")}</strong></span>
+        <span>身份证号<strong>${escapeHtml(maskIdCard(student.idCard) || "未填写")}</strong></span>
+        <span>银行卡号<strong>${escapeHtml(maskBankCard(student.bankCard) || "未填写")}</strong></span>
+        <span>开户银行<strong>${escapeHtml(student.bankName || "未填写")}</strong></span>
+        <span>资助项目<strong>${escapeHtml(student.aidProject || "未填写")}</strong></span>
+        <span>资助金额<strong>${escapeHtml(formatAmount(student.aidAmount) || "未填写")}</strong></span>
         <span>电话<strong>${escapeHtml(student.phone)}</strong></span>
         <span>住址<strong>${escapeHtml(student.address || "未填写")}</strong></span>
         <span class="wide-card">备注<strong>${escapeHtml(student.remark || "无")}</strong></span>
@@ -827,7 +938,7 @@ function editStudent(id) {
   elements.submitBtn.textContent = "保存修改";
   elements.cancelEditBtn.classList.remove("hidden");
   clearAllErrors();
-  ["name", "studentNo", "gender", "age", "className", "phone", "address", "remark"].forEach((field) => {
+  ["name", "studentNo", "gender", "age", "className", "phone", "idCard", "bankCard", "bankName", "aidProject", "aidAmount", "address", "remark"].forEach((field) => {
     elements.form.elements[field].value = student[field] || "";
   });
   elements.form.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -936,6 +1047,11 @@ function exportResults() {
     姓名: item.name,
     班级: item.className,
     联系方式: item.phone,
+    身份证号: item.idCard,
+    银行卡号: item.bankCard,
+    开户银行: item.bankName,
+    资助项目: item.aidProject,
+    资助金额: item.aidAmount,
     核对状态: item.status,
     异常字段: item.fields,
     详情: item.detail
@@ -1008,6 +1124,11 @@ function normalizeStudent(student) {
     age: normalizeAge(student.age),
     className: clean(student.className),
     phone: normalizePhone(student.phone),
+    idCard: normalizeIdCard(student.idCard),
+    bankCard: normalizeBankCard(student.bankCard),
+    bankName: clean(student.bankName),
+    aidProject: clean(student.aidProject),
+    aidAmount: normalizeAmount(student.aidAmount),
     address: clean(student.address),
     remark: clean(student.remark),
     createdAt: Number(student.createdAt) || Date.now()
@@ -1022,8 +1143,23 @@ function normalizePhone(value) {
   return clean(value).replace(/\s+/g, "");
 }
 
+function normalizeIdCard(value) {
+  return clean(value).replace(/\s+/g, "").toUpperCase();
+}
+
+function normalizeBankCard(value) {
+  return clean(value).replace(/[\s-]+/g, "");
+}
+
 function normalizeAge(value) {
   const text = clean(value);
+  if (!text) return "";
+  const number = Number(text);
+  return Number.isFinite(number) ? String(number) : text;
+}
+
+function normalizeAmount(value) {
+  const text = clean(value).replace(/,/g, "");
   if (!text) return "";
   const number = Number(text);
   return Number.isFinite(number) ? String(number) : text;
@@ -1037,6 +1173,11 @@ function pickStudentFields(student) {
     age: student.age,
     className: student.className,
     phone: student.phone,
+    idCard: student.idCard,
+    bankCard: student.bankCard,
+    bankName: student.bankName,
+    aidProject: student.aidProject,
+    aidAmount: student.aidAmount,
     address: student.address,
     remark: student.remark
   };
@@ -1047,12 +1188,53 @@ function isValidAge(value) {
   return Number.isInteger(number) && number >= 6 && number <= 80;
 }
 
+function isValidAmount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0;
+}
+
+function isValidIdCard(value) {
+  const text = normalizeIdCard(value);
+  if (/^\d{15}$/.test(text)) return true;
+  if (!/^\d{17}[\dX]$/.test(text)) return false;
+
+  const factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+  const checks = ["1", "0", "X", "9", "8", "7", "6", "5", "4", "3", "2"];
+  const sum = factors.reduce((total, factor, index) => total + Number(text[index]) * factor, 0);
+  return checks[sum % 11] === text[17];
+}
+
 function clean(value) {
   return String(value ?? "").trim();
 }
 
 function displayValue(value) {
   return clean(value) || "空";
+}
+
+function displayFieldValue(field, value) {
+  if (field === "idCard") return displayValue(maskIdCard(value));
+  if (field === "bankCard") return displayValue(maskBankCard(value));
+  if (field === "aidAmount") return displayValue(formatAmount(value));
+  return displayValue(value);
+}
+
+function maskIdCard(value) {
+  const text = clean(value);
+  if (text.length < 10) return text;
+  return `${text.slice(0, 6)}********${text.slice(-4)}`;
+}
+
+function maskBankCard(value) {
+  const text = clean(value);
+  if (text.length < 8) return text;
+  return `${text.slice(0, 4)} **** **** ${text.slice(-4)}`;
+}
+
+function formatAmount(value) {
+  const text = clean(value);
+  if (!text || !isValidAmount(text)) return text;
+  return Number(text).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 }
 
 function statusClass(status) {
