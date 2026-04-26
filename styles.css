@@ -741,14 +741,16 @@ select:focus-visible {
   position: relative;
   overflow-x: auto;
   width: 100%;
+  scrollbar-gutter: stable;
 }
 
 table {
   width: 100%;
-  min-width: 1480px;
+  min-width: 1560px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
+  margin-right: 18px;
 }
 
 th:nth-child(1),
@@ -847,7 +849,7 @@ td:nth-child(10) {
 
 .student-data-table th:nth-child(14),
 .student-data-table td:nth-child(14) {
-  width: 8%;
+  width: 12%;
 }
 
 .result-table th:nth-child(1),
@@ -899,7 +901,26 @@ td:nth-child(10) {
 
 .result-table th:nth-child(11),
 .result-table td:nth-child(11) {
-  width: 8%;
+  width: 13%;
+}
+
+.student-data-table th:last-child,
+.student-data-table td:last-child,
+.result-table th:last-child,
+.result-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  min-width: 150px;
+  overflow: visible;
+  background: #ffffff;
+  box-shadow: -10px 0 18px rgba(7, 63, 61, 0.08);
+}
+
+.student-data-table th:last-child,
+.result-table th:last-child {
+  z-index: 3;
+  background: #f2f8f6;
 }
 
 .error-table {
@@ -1020,12 +1041,27 @@ td {
   border-radius: 10px;
   padding: 0 10px;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 td .row-actions {
   flex-wrap: nowrap;
   justify-content: flex-start;
   gap: 7px;
+  min-width: max-content;
+}
+
+.student-data-table td:last-child .row-actions,
+.result-table td:last-child .row-actions {
+  justify-content: center;
+}
+
+.student-data-table td:last-child .small-btn {
+  min-width: 48px;
+}
+
+.result-table td:last-child .small-btn {
+  min-width: 56px;
 }
 
 .small-btn.edit {
