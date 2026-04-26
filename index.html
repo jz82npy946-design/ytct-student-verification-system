@@ -74,8 +74,15 @@
         <span aria-hidden="true">⇧</span>导入待核对表
         <input id="checkImportFile" type="file" accept=".xlsx,.xls">
       </label>
+      <button id="downloadStandardTemplateBtn" class="btn btn-ghost" type="button">学生库模板</button>
+      <button id="downloadCheckTemplateBtn" class="btn btn-ghost" type="button">待核对模板</button>
       <button id="compareBtn" class="btn btn-primary header-btn" type="button">开始比对</button>
       <button id="exportResultBtn" class="btn btn-ghost" type="button">导出结果</button>
+      <button id="exportBackupBtn" class="btn btn-ghost" type="button">导出备份</button>
+      <label class="btn btn-ghost file-btn" title="导入本系统导出的 JSON 备份">
+        <span aria-hidden="true">⇩</span>导入备份
+        <input id="backupImportFile" type="file" accept=".json">
+      </label>
       <button id="resetBtn" class="btn btn-danger-soft" type="button">重置数据</button>
       <button id="logoutBtn" class="btn btn-ghost" type="button">退出登录</button>
     </div>
@@ -124,6 +131,19 @@
           <small>标准库或待核对表重复</small>
         </div>
       </article>
+    </section>
+
+    <section class="security-panel panel" aria-label="数据安全和核验规则">
+      <div>
+        <p class="section-kicker">Data Safety</p>
+        <h2>本地数据安全与核验规则</h2>
+        <p class="list-desc">当前为浏览器本地版，建议定期导出备份；正式使用真实资助数据时，请部署服务端数据库、权限和审计系统。</p>
+      </div>
+      <label class="inline-check privacy-check">
+        <input id="privacyToggle" type="checkbox" checked>
+        <span>脱敏显示身份证号和银行卡号</span>
+      </label>
+      <div id="rulePanel" class="rule-panel" aria-label="选择参与比对的字段"></div>
     </section>
 
     <section class="workspace">
@@ -219,6 +239,7 @@
           <button class="tab-btn active" type="button" data-view="standard">标准学生库</button>
           <button class="tab-btn" type="button" data-view="check">待核对表</button>
           <button class="tab-btn" type="button" data-view="result">核对结果</button>
+          <button class="tab-btn" type="button" data-view="importErrors">导入错误</button>
         </div>
 
         <div class="toolbar">
@@ -257,7 +278,7 @@
   <footer class="app-footer">
     <strong>烟台文化旅游职业学院 · 学生信息核验管理系统</strong>
     <span>仅用于校内教学、演示与学生基础及资助信息核验管理实践</span>
-    <span>版本号：V1.0</span>
+    <span>版本号：V1.1</span>
   </footer>
   </div>
 

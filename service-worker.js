@@ -1,4 +1,4 @@
-const CACHE_NAME = "ytct-student-verification-pwa-v2";
+const CACHE_NAME = "ytct-student-verification-pwa-v3";
 
 const APP_ASSETS = [
   "./",

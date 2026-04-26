@@ -1,13 +1,18 @@
 const STORAGE_KEYS = {
   standard: "ytct-verification:standardStudents:v1",
   check: "ytct-verification:checkStudents:v1",
-  result: "ytct-verification:verificationResults:v1"
+  result: "ytct-verification:verificationResults:v1",
+  importErrors: "ytct-verification:importErrors:v1",
+  settings: "ytct-verification:settings:v1",
+  audit: "ytct-verification:audit:v1"
 };
 
 const AUTH_KEY = "ytct-verification:auth";
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const LOGIN_ACCOUNT = {
   username: "admin",
-  password: "YTCT@2026"
+  passwordHash: "a6b8177119933825349509963453118cbb85441bba8d32fa8a6a79c2e21947fa",
+  fallbackPasswordCodes: [89, 84, 67, 84, 64, 50, 48, 50, 54]
 };
 
 const PHONE_PATTERN = /^1[3-9]\d{9}$/;
@@ -27,6 +32,9 @@ const CORE_FIELDS = [
   ["aidAmount", "资助金额"],
   ["address", "家庭住址"]
 ];
+const DEFAULT_COMPARE_FIELDS = CORE_FIELDS.map(([field]) => field);
+const SENSITIVE_FIELDS = new Set(["idCard", "bankCard"]);
+const TEMPLATE_HEADERS = [...REQUIRED_HEADERS, ...OPTIONAL_HEADERS];
 
 const sampleStandardStudents = [
   {
@@ -85,6 +93,9 @@ const sampleStandardStudents = [
 let standardStudents = loadList(STORAGE_KEYS.standard, sampleStandardStudents);
 let checkStudents = loadList(STORAGE_KEYS.check, []);
 let verificationResults = loadResults();
+let importErrors = loadImportErrors();
+let settings = loadSettings();
+let auditLog = loadAuditLog();
 let activeView = "standard";
 let editingDataset = "standard";
 let pendingDelete = null;
@@ -123,10 +134,16 @@ const elements = {
   duplicateCount: document.querySelector("#duplicateCount"),
   standardImportFile: document.querySelector("#standardImportFile"),
   checkImportFile: document.querySelector("#checkImportFile"),
+  backupImportFile: document.querySelector("#backupImportFile"),
+  downloadStandardTemplateBtn: document.querySelector("#downloadStandardTemplateBtn"),
+  downloadCheckTemplateBtn: document.querySelector("#downloadCheckTemplateBtn"),
   compareBtn: document.querySelector("#compareBtn"),
   exportResultBtn: document.querySelector("#exportResultBtn"),
+  exportBackupBtn: document.querySelector("#exportBackupBtn"),
   resetBtn: document.querySelector("#resetBtn"),
   logoutBtn: document.querySelector("#logoutBtn"),
+  privacyToggle: document.querySelector("#privacyToggle"),
+  rulePanel: document.querySelector("#rulePanel"),
   confirmModal: document.querySelector("#confirmModal"),
   confirmMessage: document.querySelector("#confirmMessage"),
   confirmDeleteBtn: document.querySelector("#confirmDeleteBtn"),
@@ -151,11 +168,17 @@ elements.classFilter.addEventListener("change", render);
 elements.sortSelect.addEventListener("change", render);
 elements.standardImportFile.addEventListener("change", (event) => importExcel(event, "standard"));
 elements.checkImportFile.addEventListener("change", (event) => importExcel(event, "check"));
+elements.backupImportFile.addEventListener("change", importBackup);
+elements.downloadStandardTemplateBtn.addEventListener("click", () => downloadTemplate("standard"));
+elements.downloadCheckTemplateBtn.addEventListener("click", () => downloadTemplate("check"));
 elements.compareBtn.addEventListener("click", runVerification);
 elements.exportResultBtn.addEventListener("click", exportResults);
+elements.exportBackupBtn.addEventListener("click", exportBackup);
 elements.resetBtn.addEventListener("click", resetAllData);
 elements.confirmDeleteBtn.addEventListener("click", confirmDeleteStudent);
 elements.cancelDeleteBtn.addEventListener("click", closeDeleteModal);
+elements.privacyToggle.addEventListener("change", updatePrivacySetting);
+elements.rulePanel.addEventListener("change", updateCompareFields);
 elements.confirmModal.addEventListener("click", (event) => {
   if (event.target === elements.confirmModal) closeDeleteModal();
 });
@@ -172,8 +195,14 @@ window.addEventListener("appinstalled", () => {
   elements.installPrompt.classList.add("hidden");
   showToast("应用已安装到桌面");
 });
+window.addEventListener("load", () => {
+  window.setTimeout(() => {
+    if (!window.XLSX) showToast("Excel 解析库未加载，导入 Excel 和导出 Excel 会受影响，可先使用 CSV 导出");
+  }, 1200);
+});
 
 initAuth();
+renderRulePanel();
 render();
 
 async function installPwa() {
@@ -189,19 +218,24 @@ function dismissInstallPrompt() {
 }
 
 function initAuth() {
-  const authed = sessionStorage.getItem(AUTH_KEY) === "true";
+  const auth = getAuthSession();
+  const authed = auth.authed && auth.expiresAt > Date.now();
+  if (!authed) sessionStorage.removeItem(AUTH_KEY);
   elements.loginScreen.classList.toggle("hidden", authed);
   elements.appShell.classList.toggle("hidden", !authed);
+  elements.privacyToggle.checked = settings.maskSensitive;
   if (!authed) {
     elements.loginUsername.focus();
   }
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
   const username = clean(elements.loginUsername.value);
   const password = elements.loginPassword.value;
-  const valid = username === LOGIN_ACCOUNT.username && password === LOGIN_ACCOUNT.password;
+  const passwordHash = await sha256Hex(password);
+  const valid = username === LOGIN_ACCOUNT.username &&
+    (passwordHash === LOGIN_ACCOUNT.passwordHash || password === fallbackPassword());
 
   if (!valid) {
     elements.loginError.classList.remove("hidden");
@@ -210,10 +244,11 @@ function handleLogin(event) {
     return;
   }
 
-  sessionStorage.setItem(AUTH_KEY, "true");
+  refreshAuthSession();
   elements.loginError.classList.add("hidden");
   elements.loginForm.reset();
   initAuth();
+  recordAudit("登录系统", "管理员进入本地核验系统");
   showToast("登录成功，欢迎进入系统");
 }
 
@@ -221,7 +256,38 @@ function logout() {
   sessionStorage.removeItem(AUTH_KEY);
   resetForm();
   initAuth();
+  recordAudit("退出登录", "管理员退出系统");
   showToast("已退出登录");
+}
+
+function getAuthSession() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(AUTH_KEY) || "{}");
+    return {
+      authed: parsed.authed === true,
+      expiresAt: Number(parsed.expiresAt) || 0
+    };
+  } catch {
+    return { authed: false, expiresAt: 0 };
+  }
+}
+
+function refreshAuthSession() {
+  sessionStorage.setItem(AUTH_KEY, JSON.stringify({
+    authed: true,
+    expiresAt: Date.now() + SESSION_TIMEOUT_MS
+  }));
+}
+
+async function sha256Hex(value) {
+  if (!window.crypto?.subtle) return "";
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function fallbackPassword() {
+  return String.fromCharCode(...LOGIN_ACCOUNT.fallbackPasswordCodes);
 }
 
 function loadList(key, fallback) {
@@ -242,6 +308,45 @@ function loadList(key, fallback) {
 function loadResults() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.result) || "[]");
+    return Array.isArray(parsed) ? parsed.map(normalizeResult) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadImportErrors() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.importErrors) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadSettings() {
+  const fallback = {
+    maskSensitive: true,
+    compareFields: DEFAULT_COMPARE_FIELDS
+  };
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) || "{}");
+    const compareFields = Array.isArray(parsed.compareFields)
+      ? parsed.compareFields.filter((field) => DEFAULT_COMPARE_FIELDS.includes(field))
+      : fallback.compareFields;
+    return {
+      ...fallback,
+      ...parsed,
+      compareFields: compareFields.length > 0 ? compareFields : fallback.compareFields,
+      maskSensitive: parsed.maskSensitive !== false
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function loadAuditLog() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.audit) || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -252,6 +357,9 @@ function saveAll() {
   localStorage.setItem(STORAGE_KEYS.standard, JSON.stringify(standardStudents));
   localStorage.setItem(STORAGE_KEYS.check, JSON.stringify(checkStudents));
   localStorage.setItem(STORAGE_KEYS.result, JSON.stringify(verificationResults));
+  localStorage.setItem(STORAGE_KEYS.importErrors, JSON.stringify(importErrors));
+  localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+  localStorage.setItem(STORAGE_KEYS.audit, JSON.stringify(auditLog.slice(-300)));
 }
 
 function handleSubmit(event) {
@@ -274,11 +382,13 @@ function handleSubmit(event) {
   }
 
   verificationResults = [];
+  importErrors = [];
   saveAll();
   resetForm();
   activeView = target;
   syncTabs();
   render();
+  recordAudit(isEditing ? "编辑学生信息" : "新增学生信息", `${student.name}（${student.studentNo}）`);
   showToast(isEditing ? "编辑成功" : "新增成功，已添加到学生库");
 }
 
@@ -372,12 +482,14 @@ function importExcel(event, type) {
       const imported = parseExcelRows(rows);
       let changed = true;
 
+      importErrors = collectImportErrors(imported, type);
+
       if (type === "standard") {
         changed = handleStandardImport(imported);
       } else {
         checkStudents = imported;
         activeView = "check";
-        showToast(`导入成功，待核对表共 ${imported.length} 条`);
+        showToast(`导入成功，待核对表共 ${imported.length} 条，格式异常 ${importErrors.length} 项`);
       }
 
       if (!changed) return;
@@ -387,6 +499,7 @@ function importExcel(event, type) {
       resetForm();
       syncTabs();
       render();
+      recordAudit(type === "standard" ? "导入标准学生库" : "导入待核对表", `导入 ${imported.length} 条，发现 ${importErrors.length} 项导入错误`);
     } catch (error) {
       showToast(`导入失败：${error.message}`);
     } finally {
@@ -505,6 +618,27 @@ function hasImportFormatIssue(student) {
   return Boolean(student.aidAmount && !isValidAmount(student.aidAmount));
 }
 
+function collectImportErrors(students, type) {
+  return students.flatMap((student) => {
+    const errors = [];
+    if (!student.studentNo) {
+      errors.push({ field: "学号", message: "学号为空，无法作为核验匹配依据" });
+    }
+    errors.push(...getFormatErrors(student));
+    return errors.map((error) => ({
+      id: crypto.randomUUID(),
+      dataset: type === "standard" ? "标准学生库" : "待核对表",
+      rowNumber: student._rowNumber || "",
+      studentNo: student.studentNo,
+      name: student.name,
+      field: error.field,
+      value: getFieldValueByLabel(student, error.field),
+      message: error.message,
+      createdAt: Date.now()
+    }));
+  });
+}
+
 function parseExcelRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error("表格为空");
@@ -518,12 +652,12 @@ function parseExcelRows(rows) {
 
   const validHeaders = [...REQUIRED_HEADERS, ...OPTIONAL_HEADERS];
   const imported = rows
-    .map((row) => {
+    .map((row, index) => {
       const normalizedRow = {};
       validHeaders.forEach((header) => {
         normalizedRow[header] = clean(row[header]);
       });
-      return normalizeStudent({
+      const student = normalizeStudent({
         id: crypto.randomUUID(),
         name: normalizedRow["姓名"],
         studentNo: normalizedRow["学号"],
@@ -540,6 +674,8 @@ function parseExcelRows(rows) {
         remark: normalizedRow["备注"],
         createdAt: Date.now()
       });
+      student._rowNumber = index + 2;
+      return student;
     })
     .filter((student) => Object.values(pickStudentFields(student)).some(Boolean));
 
@@ -564,6 +700,7 @@ function runVerification() {
   saveAll();
   syncTabs();
   render();
+  recordAudit("执行自动比对", `生成 ${verificationResults.length} 条核对结果`);
   showToast("自动比对完成");
 }
 
@@ -610,6 +747,7 @@ function buildVerificationResults() {
 
     const standard = standardMap.get(student.studentNo);
     const diffs = CORE_FIELDS
+      .filter(([field]) => settings.compareFields.includes(field))
       .filter(([field]) => clean(standard[field]) !== clean(student[field]))
       .map(([field, label]) => `${label}不一致：标准库为 ${displayFieldValue(field, standard[field])}，待核对表为 ${displayFieldValue(field, student[field])}`);
 
@@ -618,7 +756,7 @@ function buildVerificationResults() {
       return;
     }
 
-    results.push(makeResult(base, "通过", "", "所有核心字段一致"));
+    results.push(makeResult(base, "通过", "", "已选核验字段一致"));
   });
 
   standardStudents.forEach((student) => {
@@ -636,7 +774,7 @@ function buildVerificationResults() {
     }
   });
 
-  return results.map((item, index) => ({ ...item, id: `${Date.now()}-${index}` }));
+  return results.map((item, index) => normalizeResult({ ...item, id: `${Date.now()}-${index}` }));
 }
 
 function getFormatErrors(student) {
@@ -721,6 +859,7 @@ function syncTabs() {
 }
 
 function render() {
+  if (getAuthSession().authed) refreshAuthSession();
   updateClassFilter();
   const rows = getVisibleRows();
   renderTable(rows);
@@ -748,6 +887,11 @@ function getVisibleRows() {
         row.bankName,
         row.aidProject,
         row.aidAmount,
+        row.dataset,
+        row.field,
+        row.value,
+        row.message,
+        row.rowNumber,
         row.status,
         row.fields,
         row.detail
@@ -761,6 +905,7 @@ function getVisibleRows() {
 function getActiveRows() {
   if (activeView === "standard") return standardStudents;
   if (activeView === "check") return checkStudents;
+  if (activeView === "importErrors") return importErrors;
   return verificationResults;
 }
 
@@ -773,7 +918,7 @@ function compareRows(a, b, field, direction) {
 }
 
 function renderTable(rows) {
-  elements.dataTable.className = activeView === "result" ? "result-table" : "student-data-table";
+  elements.dataTable.className = activeView === "result" ? "result-table" : activeView === "importErrors" ? "error-table" : "student-data-table";
   if (activeView === "result") {
     elements.tableHead.innerHTML = `
       <tr>
@@ -784,12 +929,26 @@ function renderTable(rows) {
         <th>银行卡号</th>
         <th>资助金额</th>
         <th>核对状态</th>
+        <th>处理状态</th>
         <th>异常字段</th>
         <th>详情</th>
         <th>操作</th>
       </tr>
     `;
     elements.table.innerHTML = rows.map(renderResultRow).join("");
+  } else if (activeView === "importErrors") {
+    elements.tableHead.innerHTML = `
+      <tr>
+        <th>来源</th>
+        <th>行号</th>
+        <th>学号</th>
+        <th>姓名</th>
+        <th>字段</th>
+        <th>当前值</th>
+        <th>错误说明</th>
+      </tr>
+    `;
+    elements.table.innerHTML = rows.map(renderImportErrorRow).join("");
   } else {
     elements.tableHead.innerHTML = `
       <tr>
@@ -845,9 +1004,29 @@ function renderResultRow(result) {
       <td title="${escapeHtml(result.bankCard)}">${escapeHtml(maskBankCard(result.bankCard) || "未填写")}</td>
       <td>${escapeHtml(formatAmount(result.aidAmount) || "未填写")}</td>
       <td><span class="status-pill ${statusClass(result.status)}">${escapeHtml(result.status)}</span></td>
+      <td>${renderProcessState(result)}</td>
       <td>${escapeHtml(result.fields || "-")}</td>
       <td title="${escapeHtml(result.detail)}">${escapeHtml(result.detail)}</td>
-      <td><button class="btn small-btn" type="button" data-action="locate" data-id="${escapeHtml(result.studentNo)}">定位</button></td>
+      <td>
+        <div class="row-actions">
+          <button class="btn small-btn" type="button" data-action="locate" data-id="${escapeHtml(result.studentNo)}">定位</button>
+          <button class="btn small-btn edit" type="button" data-action="process" data-id="${escapeHtml(result.id)}">${result.processed ? "改备注" : "标记处理"}</button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderImportErrorRow(error) {
+  return `
+    <tr>
+      <td>${escapeHtml(error.dataset || "-")}</td>
+      <td>${escapeHtml(error.rowNumber || "-")}</td>
+      <td>${escapeHtml(error.studentNo || "未填写")}</td>
+      <td>${escapeHtml(error.name || "未填写")}</td>
+      <td>${escapeHtml(error.field || "-")}</td>
+      <td title="${escapeHtml(error.value || "")}">${escapeHtml(error.value || "空")}</td>
+      <td title="${escapeHtml(error.message || "")}">${escapeHtml(error.message || "-")}</td>
     </tr>
   `;
 }
@@ -869,7 +1048,30 @@ function renderCards(rows) {
           <span>银行卡号<strong>${escapeHtml(maskBankCard(result.bankCard) || "未填写")}</strong></span>
           <span>资助金额<strong>${escapeHtml(formatAmount(result.aidAmount) || "未填写")}</strong></span>
           <span>异常字段<strong>${escapeHtml(result.fields || "-")}</strong></span>
+          <span>处理状态<strong>${escapeHtml(result.processed ? "已处理" : "未处理")}</strong></span>
           <span class="wide-card">详情<strong>${escapeHtml(result.detail)}</strong></span>
+          ${result.processedNote ? `<span class="wide-card">处理备注<strong>${escapeHtml(result.processedNote)}</strong></span>` : ""}
+        </div>
+      </article>
+    `).join("");
+    bindActionButtons(elements.cards);
+    return;
+  }
+
+  if (activeView === "importErrors") {
+    elements.cards.innerHTML = rows.map((error) => `
+      <article class="student-card">
+        <div class="card-top">
+          <div>
+            <span class="student-name">${escapeHtml(error.field || "导入错误")}</span>
+            <span class="student-sub">${escapeHtml(error.dataset || "-")} · 第 ${escapeHtml(error.rowNumber || "-")} 行</span>
+          </div>
+        </div>
+        <div class="card-grid">
+          <span>学号<strong>${escapeHtml(error.studentNo || "未填写")}</strong></span>
+          <span>姓名<strong>${escapeHtml(error.name || "未填写")}</strong></span>
+          <span>当前值<strong>${escapeHtml(error.value || "空")}</strong></span>
+          <span class="wide-card">错误说明<strong>${escapeHtml(error.message || "-")}</strong></span>
         </div>
       </article>
     `).join("");
@@ -922,6 +1124,7 @@ function handleAction(event) {
   if (action === "edit") editStudent(id);
   if (action === "delete") openDeleteModal(id);
   if (action === "locate") locateStudent(id);
+  if (action === "process") processResult(id);
 }
 
 function editStudent(id) {
@@ -963,6 +1166,7 @@ function closeDeleteModal() {
 
 function confirmDeleteStudent() {
   if (!pendingDelete) return;
+  const deleted = getDataset(pendingDelete.dataset).find((item) => item.id === pendingDelete.id);
   if (pendingDelete.dataset === "standard") {
     standardStudents = standardStudents.filter((item) => item.id !== pendingDelete.id);
   } else {
@@ -972,6 +1176,7 @@ function confirmDeleteStudent() {
   saveAll();
   closeDeleteModal();
   render();
+  recordAudit("删除学生信息", deleted ? `${deleted.name}（${deleted.studentNo}）` : "删除记录");
   showToast("删除成功");
 }
 
@@ -982,6 +1187,21 @@ function locateStudent(studentNo) {
   elements.searchInput.value = studentNo;
   syncTabs();
   render();
+}
+
+function processResult(id) {
+  const result = verificationResults.find((item) => item.id === id);
+  if (!result) return;
+  const note = window.prompt("请输入处理意见或复核说明：", result.processedNote || "");
+  if (note === null) return;
+  result.processed = true;
+  result.processedNote = clean(note) || "已人工复核";
+  result.processedAt = new Date().toISOString();
+  result.processedBy = LOGIN_ACCOUNT.username;
+  saveAll();
+  render();
+  recordAudit("处理核对异常", `${result.name || result.studentNo}：${result.processedNote}`);
+  showToast("处理状态已保存");
 }
 
 function renderStats() {
@@ -1029,6 +1249,9 @@ function renderEmptyState(rows) {
   } else if (activeView === "check") {
     elements.emptyTitle.textContent = "暂无待核对表，请先导入 Excel";
     elements.emptyText.textContent = "导入待核对表后，点击开始比对即可自动生成核验结果。";
+  } else if (activeView === "importErrors") {
+    elements.emptyTitle.textContent = "暂无导入错误";
+    elements.emptyText.textContent = "导入 Excel 后，如果存在字段缺失或格式异常，会在这里显示具体行号和错误原因。";
   } else {
     elements.emptyTitle.textContent = "暂无核对结果，请先开始比对";
     elements.emptyText.textContent = "系统会按学号比对标准库与待核对表，并展示异常字段和详情。";
@@ -1042,17 +1265,22 @@ function exportResults() {
     return;
   }
 
+  const exportFull = window.confirm("是否导出完整身份证号和银行卡号？\n\n确定：完整导出，用于校内正式复核。\n取消：脱敏导出，更适合分享或演示。");
   const rows = verificationResults.map((item) => ({
     学号: item.studentNo,
     姓名: item.name,
     班级: item.className,
     联系方式: item.phone,
-    身份证号: item.idCard,
-    银行卡号: item.bankCard,
+    身份证号: exportFull ? item.idCard : maskIdCard(item.idCard, true),
+    银行卡号: exportFull ? item.bankCard : maskBankCard(item.bankCard, true),
     开户银行: item.bankName,
     资助项目: item.aidProject,
     资助金额: item.aidAmount,
     核对状态: item.status,
+    处理状态: item.processed ? "已处理" : "未处理",
+    处理人: item.processedBy,
+    处理时间: item.processedAt,
+    处理备注: item.processedNote,
     异常字段: item.fields,
     详情: item.detail
   }));
@@ -1065,10 +1293,15 @@ function exportResults() {
   } else {
     exportCsv(rows);
   }
+  recordAudit(exportFull ? "完整导出核对结果" : "脱敏导出核对结果", `导出 ${rows.length} 条`);
   showToast("核对结果已导出");
 }
 
 function exportCsv(rows) {
+  downloadRowsCsv(rows, `学生信息核对结果-${today()}.csv`);
+}
+
+function downloadRowsCsv(rows, filename) {
   const headers = Object.keys(rows[0]);
   const csv = [
     headers.join(","),
@@ -1077,7 +1310,98 @@ function exportCsv(rows) {
   const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `学生信息核对结果-${today()}.csv`;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function downloadTemplate(type) {
+  const sampleRows = [
+    {
+      姓名: "测试学生",
+      学号: type === "standard" ? "2026999" : "2026999",
+      性别: "男",
+      班级: "旅游管理一班",
+      联系方式: "13800009999",
+      身份证号: "370602200801010010",
+      银行卡号: "6222020200010000001",
+      年龄: "18",
+      家庭住址: "山东省烟台市",
+      开户银行: "中国工商银行烟台分行",
+      资助项目: "国家助学金",
+      资助金额: "3300",
+      备注: type === "standard" ? "标准学生库模板示例" : "待核对表模板示例"
+    }
+  ];
+
+  const fileName = `${type === "standard" ? "标准学生库" : "待核对表"}导入模板-${today()}`;
+  if (window.XLSX) {
+    const worksheet = XLSX.utils.json_to_sheet(sampleRows, { header: TEMPLATE_HEADERS });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, type === "standard" ? "标准学生库" : "待核对表");
+    XLSX.writeFile(workbook, `${fileName}.xlsx`);
+  } else {
+    downloadRowsCsv(sampleRows, `${fileName}.csv`);
+  }
+  recordAudit("下载导入模板", fileName);
+  showToast("模板已生成");
+}
+
+function exportBackup() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    standardStudents,
+    checkStudents,
+    verificationResults,
+    importErrors,
+    settings,
+    auditLog
+  };
+  downloadJson(payload, `学生核验系统本地备份-${today()}.json`);
+  recordAudit("导出本地备份", "导出标准库、待核对表、核对结果和设置");
+  showToast("本地备份已导出");
+}
+
+function importBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (loadEvent) => {
+    try {
+      const payload = JSON.parse(loadEvent.target.result);
+      if (!payload || !Array.isArray(payload.standardStudents) || !Array.isArray(payload.checkStudents)) {
+        throw new Error("备份文件格式不正确");
+      }
+      const confirmed = window.confirm("导入备份会覆盖当前本地数据，是否继续？");
+      if (!confirmed) return;
+      standardStudents = payload.standardStudents.map(normalizeStudent);
+      checkStudents = payload.checkStudents.map(normalizeStudent);
+      verificationResults = Array.isArray(payload.verificationResults) ? payload.verificationResults.map(normalizeResult) : [];
+      importErrors = Array.isArray(payload.importErrors) ? payload.importErrors : [];
+      settings = payload.settings ? { ...loadSettings(), ...payload.settings } : loadSettings();
+      auditLog = Array.isArray(payload.auditLog) ? payload.auditLog : [];
+      activeView = "standard";
+      saveAll();
+      renderRulePanel();
+      syncTabs();
+      render();
+      recordAudit("导入本地备份", file.name);
+      showToast("备份导入完成");
+    } catch (error) {
+      showToast(`备份导入失败：${error.message}`);
+    } finally {
+      event.target.value = "";
+    }
+  };
+  reader.readAsText(file, "utf-8");
+}
+
+function downloadJson(payload, filename) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -1091,11 +1415,13 @@ function resetAllData() {
   standardStudents = sampleStandardStudents.map((student) => ({ ...student, id: crypto.randomUUID() }));
   checkStudents = [];
   verificationResults = [];
+  importErrors = [];
   activeView = "standard";
   saveAll();
   resetForm();
   syncTabs();
   render();
+  recordAudit("重置本地数据", "恢复示例标准学生库并清空待核对表");
   showToast("重置成功");
 }
 
@@ -1132,6 +1458,29 @@ function normalizeStudent(student) {
     address: clean(student.address),
     remark: clean(student.remark),
     createdAt: Number(student.createdAt) || Date.now()
+  };
+}
+
+function normalizeResult(result) {
+  return {
+    id: result.id || crypto.randomUUID(),
+    studentNo: clean(result.studentNo),
+    name: clean(result.name),
+    className: clean(result.className),
+    phone: normalizePhone(result.phone),
+    idCard: normalizeIdCard(result.idCard),
+    bankCard: normalizeBankCard(result.bankCard),
+    bankName: clean(result.bankName),
+    aidProject: clean(result.aidProject),
+    aidAmount: normalizeAmount(result.aidAmount),
+    status: clean(result.status),
+    fields: clean(result.fields),
+    detail: clean(result.detail),
+    processed: result.processed === true,
+    processedBy: clean(result.processedBy),
+    processedAt: clean(result.processedAt),
+    processedNote: clean(result.processedNote),
+    createdAt: Number(result.createdAt) || Date.now()
   };
 }
 
@@ -1219,14 +1568,16 @@ function displayFieldValue(field, value) {
   return displayValue(value);
 }
 
-function maskIdCard(value) {
+function maskIdCard(value, force = false) {
   const text = clean(value);
+  if (!force && !settings.maskSensitive) return text;
   if (text.length < 10) return text;
   return `${text.slice(0, 6)}********${text.slice(-4)}`;
 }
 
-function maskBankCard(value) {
+function maskBankCard(value, force = false) {
   const text = clean(value);
+  if (!force && !settings.maskSensitive) return text;
   if (text.length < 8) return text;
   return `${text.slice(0, 4)} **** **** ${text.slice(-4)}`;
 }
@@ -1235,6 +1586,73 @@ function formatAmount(value) {
   const text = clean(value);
   if (!text || !isValidAmount(text)) return text;
   return Number(text).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+}
+
+function renderRulePanel() {
+  elements.privacyToggle.checked = settings.maskSensitive;
+  elements.rulePanel.innerHTML = `
+    <span class="rule-title">参与自动比对的字段</span>
+    ${CORE_FIELDS.map(([field, label]) => `
+      <label class="inline-check">
+        <input type="checkbox" name="compareField" value="${field}" ${settings.compareFields.includes(field) ? "checked" : ""}>
+        <span>${label}</span>
+      </label>
+    `).join("")}
+  `;
+}
+
+function updatePrivacySetting(event) {
+  settings.maskSensitive = event.target.checked;
+  saveAll();
+  render();
+  recordAudit("切换脱敏显示", settings.maskSensitive ? "开启脱敏显示" : "关闭脱敏显示");
+}
+
+function updateCompareFields(event) {
+  if (event.target.name !== "compareField") return;
+  const selected = [...elements.rulePanel.querySelectorAll('input[name="compareField"]:checked')]
+    .map((input) => input.value);
+  if (selected.length === 0) {
+    event.target.checked = true;
+    showToast("至少保留一个参与比对的字段");
+    return;
+  }
+  settings.compareFields = selected;
+  verificationResults = [];
+  saveAll();
+  render();
+  recordAudit("调整核验规则", `当前比对字段：${selected.map(getFieldLabel).join("、")}`);
+  showToast("核验字段已更新，请重新开始比对");
+}
+
+function getFieldLabel(field) {
+  return CORE_FIELDS.find(([key]) => key === field)?.[1] || field;
+}
+
+function getFieldValueByLabel(student, label) {
+  const field = CORE_FIELDS.find(([, fieldLabel]) => fieldLabel === label)?.[0];
+  if (field) return displayFieldValue(field, student[field]);
+  if (label === "学号") return student.studentNo;
+  if (label === "姓名") return student.name;
+  if (label === "联系方式") return student.phone;
+  return "";
+}
+
+function renderProcessState(result) {
+  if (!result.processed) return '<span class="status-pill status-absent">未处理</span>';
+  const title = [result.processedBy, result.processedAt, result.processedNote].filter(Boolean).join(" · ");
+  return `<span class="status-pill status-pass" title="${escapeHtml(title)}">已处理</span>`;
+}
+
+function recordAudit(action, detail = "") {
+  auditLog.push({
+    id: crypto.randomUUID(),
+    action,
+    detail,
+    time: new Date().toISOString(),
+    operator: LOGIN_ACCOUNT.username
+  });
+  localStorage.setItem(STORAGE_KEYS.audit, JSON.stringify(auditLog.slice(-300)));
 }
 
 function statusClass(status) {
