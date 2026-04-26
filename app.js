@@ -331,16 +331,17 @@ function importExcel(event, type) {
         raw: false
       });
       const imported = parseExcelRows(rows);
+      let changed = true;
 
       if (type === "standard") {
-        standardStudents = imported;
-        activeView = "standard";
-        showToast(`导入成功，标准学生库共 ${imported.length} 条`);
+        changed = handleStandardImport(imported);
       } else {
         checkStudents = imported;
         activeView = "check";
         showToast(`导入成功，待核对表共 ${imported.length} 条`);
       }
+
+      if (!changed) return;
 
       verificationResults = [];
       saveAll();
@@ -354,6 +355,106 @@ function importExcel(event, type) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function handleStandardImport(imported) {
+  if (standardStudents.length === 0) {
+    const result = filterImportableStudents(imported);
+    standardStudents = result.validStudents;
+    activeView = "standard";
+    showToast(`导入成功，新增 ${result.validStudents.length} 条，格式异常 ${result.invalidCount} 条`);
+    return true;
+  }
+
+  const mode = window.prompt(
+    [
+      "当前标准学生库已有数据，请选择导入方式：",
+      "1. 合并导入：保留现有数据，重复学号自动跳过",
+      "2. 覆盖导入：清空当前标准学生库后导入",
+      "3. 取消导入",
+      "请输入 1、2 或 3"
+    ].join("\n")
+  );
+
+  if (mode === null || clean(mode) === "" || clean(mode) === "3") {
+    showToast("已取消导入，标准学生库未修改");
+    return false;
+  }
+
+  if (clean(mode) === "1") {
+    mergeStandardStudents(imported);
+    return true;
+  }
+
+  if (clean(mode) === "2") {
+    const confirmed = window.confirm("覆盖导入会清空当前手动新增和已有学生库数据，是否继续？");
+    if (!confirmed) {
+      showToast("已取消覆盖导入，标准学生库未修改");
+      return false;
+    }
+    const result = filterImportableStudents(imported);
+    standardStudents = result.validStudents;
+    activeView = "standard";
+    showToast(`覆盖导入完成，导入 ${result.validStudents.length} 条，格式异常 ${result.invalidCount} 条`);
+    return true;
+  }
+
+  showToast("未识别导入方式，已取消导入");
+  return false;
+}
+
+function mergeStandardStudents(imported) {
+  const existingNos = new Set(standardStudents.map((student) => student.studentNo).filter(Boolean));
+  let addedCount = 0;
+  let skippedCount = 0;
+  let invalidCount = 0;
+
+  imported.forEach((student) => {
+    if (hasImportFormatIssue(student)) {
+      invalidCount += 1;
+      return;
+    }
+
+    if (existingNos.has(student.studentNo)) {
+      skippedCount += 1;
+      return;
+    }
+
+    standardStudents.unshift(student);
+    existingNos.add(student.studentNo);
+    addedCount += 1;
+  });
+
+  activeView = "standard";
+  showToast(`合并导入完成：成功新增 ${addedCount} 条，跳过重复 ${skippedCount} 条，格式异常 ${invalidCount} 条`);
+}
+
+function filterImportableStudents(imported) {
+  const validStudents = [];
+  let invalidCount = 0;
+
+  imported.forEach((student) => {
+    if (hasImportFormatIssue(student)) {
+      invalidCount += 1;
+      return;
+    }
+    validStudents.push(student);
+  });
+
+  return { validStudents, invalidCount };
+}
+
+function hasImportFormatIssue(student) {
+  if (!student.name || !student.studentNo || !student.gender || !student.className || !student.phone) {
+    return true;
+  }
+  if (!["男", "女"].includes(student.gender)) {
+    return true;
+  }
+  if (student.age && !isValidAge(student.age)) {
+    return true;
+  }
+  return !PHONE_PATTERN.test(student.phone);
 }
 
 function parseExcelRows(rows) {
